@@ -204,15 +204,16 @@ try {
 
 # ---------------------------------------------------------------- smoke the build
 Head '构建后自检（不改动风扇）'
-$srv = $null
-try {
-  $out = & (Join-Path $stage $exeName) --selftest 2>&1 | Out-String
-  Info ('exit=' + $LASTEXITCODE)
-  ($out -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 30) | ForEach-Object { Info "  $_" }
-  if ($LASTEXITCODE -ne 0) { throw "selftest 失败（退出码 $LASTEXITCODE）" }
-} catch {
-  Write-Warning "selftest 未能通过：$($_.Exception.Message)"
-  Write-Warning '继续产出，但请手动检查。'
+$out = & (Join-Path $stage $exeName) --selftest 2>&1 | Out-String
+$stExit = $LASTEXITCODE
+Info ('exit=' + $stExit)
+($out -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -First 30) | ForEach-Object { Info "  $_" }
+# A failing selftest must fail the build. It used to be wrapped in try/catch that only
+# printed a warning, so CI's build step went green while the artifact was broken and the
+# real failure surfaced three steps later with no explanation.
+if ($stExit -ne 0) {
+  $bad = (@($out -split "`r?`n" | Where-Object { $_ -match 'FAIL' }) -join ' | ')
+  throw "selftest 失败（退出码 $stExit）：$bad"
 }
 
 # ---------------------------------------------------------------- zip
