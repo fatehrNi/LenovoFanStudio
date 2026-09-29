@@ -12,13 +12,17 @@ $ErrorActionPreference = 'Stop'
 $target = (Resolve-Path -LiteralPath $Path).Path
 
 $exts = @('.ps1', '.psm1', '.psd1', '.cs')
-$skipDirs = @('\dist\', '\state\', '\logs\', '\build\obj\', '\.git\')
+# Skip runtime/output dirs. NB: keep the file in a named variable - inside a Where-Object
+# block $_ is the pipeline item, so "$_.FullName -like "*$_*"" compares the SKIP PATTERN
+# to itself and silently skips nothing at all.
+$skipRel = @('dist\', 'state\', 'logs\', 'build\obj\', '.git\')
 
 if ((Get-Item -LiteralPath $target).PSIsContainer) {
   $files = @(Get-ChildItem -LiteralPath $target -Recurse -File -ErrorAction SilentlyContinue |
     Where-Object {
-      ($exts -contains $_.Extension) -and
-      -not ($skipDirs | Where-Object { $_.FullName -like "*$_*" })
+      $item = $_
+      ($exts -contains $item.Extension) -and
+      -not ($skipRel | Where-Object { $item.FullName -like "*$($_)*" })
     })
 } else {
   $files = @(Get-Item -LiteralPath $target)

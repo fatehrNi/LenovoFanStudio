@@ -18,8 +18,20 @@ jobs:
       - name: 编码检查（PowerShell 5.1 在中文系统上按 GBK 读无 BOM 文件）
         shell: powershell
         run: |
-          powershell -NoProfile -ExecutionPolicy Bypass -File tools\fix-encoding.ps1 -DryRun
-          if ($LASTEXITCODE -ne 0) { throw '有源文件不是 UTF-8 with BOM，请先跑 tools\fix-encoding.ps1' }
+          # Inline instead of calling tools\fix-encoding.ps1: the annotation below tells us
+          # exactly which file the runner is unhappy about (a bare nested exit code does not).
+          $ErrorActionPreference = 'Continue'
+          $exts = @('.ps1', '.psm1', '.psd1', '.cs')
+          $all = @(Get-ChildItem -LiteralPath . -Recurse -File -ErrorAction SilentlyContinue |
+                   Where-Object { $exts -contains $_.Extension })
+          $bad = @($all | Where-Object {
+              $b = [IO.File]::ReadAllBytes($_.FullName)
+              -not ($b.Length -ge 3 -and $b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF)
+            })
+          $base = (Get-Location).Path.Length + 1
+          Write-Host ("::notice::UTF-8 BOM check: {0} source file(s) scanned, {1} missing BOM" -f $all.Count, $bad.Count)
+          foreach ($f in $bad) { Write-Host ("::error file={0}::源文件缺少 UTF-8 BOM" -f $f.FullName.Substring($base)) }
+          if ($bad.Count) { exit 1 }
 
       - name: 语法检查
         shell: powershell
