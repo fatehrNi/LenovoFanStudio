@@ -88,23 +88,22 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $out = ''
           try {
-            # no text scanning for problems here: build.ps1 prints "SELFTEST ALL PASS" on success,
-            # and a loose regex would turn a green build into a red one. build.ps1 throws on real
-            # failures, which this try/catch catches; the assertions below prove it actually built.
-            $out = & build\build.ps1 2>&1 | Out-String
-            Write-Host $out
-            $found = @(Get-ChildItem dist -Recurse -Filter LegionFanStudio.exe -ErrorAction SilentlyContinue)
+            # Do NOT buffer build.ps1 through Out-String: in PowerShell 5.1 Write-Host goes to the
+            # information stream (6), which `2>&1` does not capture, so a captured $out is nearly
+            # empty and any assertion on its text is meaningless. Let it write straight to the step
+            # log; a throw from build.ps1 is terminating and lands in this catch.
+            & build\build.ps1
+            $found = @(Get-ChildItem dist -Recurse -Filter LegionFanStudio.exe -ErrorAction Stop)
             if ($found.Count -eq 0) { throw 'build finished but dist contains no LegionFanStudio.exe' }
-            $zip = @(Get-ChildItem dist -Filter *.zip -ErrorAction SilentlyContinue)
+            $zip = @(Get-ChildItem dist -Filter *.zip -ErrorAction Stop)
             if ($zip.Count -eq 0) { throw 'build finished but dist contains no zip' }
-            if ($out -notmatch 'SELFTEST ALL PASS') { throw 'build selftest did not report success' }
-            Write-Host ("::notice::build OK: {0} + {1}" -f $found[0].Name, $zip[0].Name)
+            $sha = @(Get-ChildItem dist -Filter *.sha256 -ErrorAction Stop)
+            if ($sha.Count -eq 0) { throw 'build finished but dist contains no .sha256' }
+            Write-Host ("::notice::build OK: {0}, {1}, {2}" -f $found[0].Name, $zip[0].Name, $sha[0].Name)
             exit 0
           } catch {
-            Write-Host ("::error::{0}" -f $_.Exception.Message)
-            if ($out) { (($out -split "`r?`n" | Where-Object { $_.Trim() }) | Select-Object -Last 15) | ForEach-Object { Write-Host "::error::$_" } }
+            Write-Host ("::error::build step failed: {0}" -f $_.Exception.Message)
             exit 1
           }
 
