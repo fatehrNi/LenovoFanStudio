@@ -1,0 +1,22 @@
+# Windows-only tool: keep the launchers and scripts on CRLF no matter what the
+# committer's core.autocrlf says, and never diff/treat the binaries as text.
+* text=auto eol=lf
+
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+*.psm1 text eol=crlf
+*.psd1 text eol=crlf
+*.cs   text eol=crlf
+
+*.ico  binary
+*.exe  binary
+*.pdb  binary
+*.zip  binary
+*.png  binary
+*.jpg  binary
+
+*.md   text
+*.html text
+*.json text
+*.yml  text
+*.xml  text

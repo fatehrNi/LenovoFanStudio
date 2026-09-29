@@ -1,6 +1,6 @@
-MIT License
+﻿MIT License
 
-Copyright (c) 2026 Ni Yazhong
+Copyright (c) 2026 Legion Fan Studio contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +19,17 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+Disclaimer: this is an unofficial, community tool. It is NOT affiliated with,
+endorsed by, or sponsored by Lenovo. It writes to the embedded controller,
+which controls cooling; a wrong value can raise temperatures or trigger
+throttling. Every EC write in this project is range-clamped and logged, and the
+hardware behavior on the reference machine is documented in docs/. Read it
+before changing limits, and never run a modified build without the safety
+clamps in place.
+
+本项目为第三方非官方工具，与联想公司无关。它直接写入 EC 以控制散热，错误取值会
+影响温度与性能；代码里所有转速写入都有区间夹取与日志。改动前请先阅读 docs/ 下的
+实测记录，并在自己的机器上跑过 fanctl test 再使用。

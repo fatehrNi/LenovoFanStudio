@@ -1,0 +1,421 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>拯救者 Y9000P 2022 · 风扇控制中心</title>
+<style>
+  :root{
+    --bg:#0b0e13; --panel:#141a23; --panel2:#1b232f; --line:#25303f; --ink:#e6edf5;
+    --dim:#8b9bb0; --acc:#22d3ee; --good:#22c55e; --warn:#f59e0b; --bad:#ef4444; --cyan:#67e8f9;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 20% -10%,#123 0%,var(--bg) 60%);color:var(--ink);
+    font:14px/1.5 "Microsoft YaHei UI","Microsoft YaHei",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;}
+  header{position:sticky;top:0;z-index:9;display:flex;align-items:center;gap:14px;padding:14px 20px;
+    background:rgba(11,14,19,.86);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  h1{font-size:17px;margin:0;letter-spacing:.5px}
+  h1 small{color:var(--dim);font-weight:400;font-size:12px;margin-left:8px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--bad);box-shadow:0 0 10px currentColor;display:inline-block}
+  .dot.on{background:var(--good)}
+  .pill{margin-left:auto;font-size:12px;color:var(--dim);display:flex;align-items:center;gap:7px}
+  main{padding:18px 20px 40px;max-width:1180px;margin:0 auto}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:12px;margin-bottom:14px}
+  .card{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);
+    border-radius:12px;padding:12px 14px}
+  .card .k{color:var(--dim);font-size:11.5px;letter-spacing:.4px}
+  .card .v{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:2px}
+  .card .u{font-size:12px;color:var(--dim);margin-left:3px;font-weight:400}
+  .card .s{font-size:11.5px;color:var(--dim);margin-top:3px}
+  .rpm-ok{color:var(--cyan)} .hot{color:var(--warn)} .crit{color:var(--bad)}
+  .row{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
+  button{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:9px;
+    padding:9px 14px;font-size:13.5px;cursor:pointer;font-family:inherit;transition:.15s}
+  button:hover{border-color:var(--acc);color:var(--cyan);transform:translateY(-1px)}
+  button.active{background:linear-gradient(180deg,#0e7490,#155e75);border-color:var(--acc);color:#fff}
+  button.danger:hover{border-color:var(--bad);color:#fca5a5}
+  button.ghost{background:transparent}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+  section>h2{margin:0 0 12px;font-size:14.5px;letter-spacing:.4px;display:flex;align-items:center;gap:10px}
+  section>h2 span{color:var(--dim);font-size:12px;font-weight:400}
+  canvas{width:100%;height:210px;display:block;background:#0d131b;border-radius:10px;border:1px solid var(--line)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{color:var(--dim);text-align:left;font-weight:400;font-size:11.5px;padding:4px 6px;border-bottom:1px solid var(--line)}
+  td{padding:3px 6px;border-bottom:1px solid #1c2531}
+  input[type=number]{width:78px;background:#0d131b;border:1px solid var(--line);color:var(--ink);
+    border-radius:6px;padding:5px 7px;font-size:13px;font-family:inherit}
+  input[type=range]{width:100%;accent-color:var(--acc)}
+  .kv{display:flex;gap:10px;align-items:center;margin:6px 0;font-size:13px}
+  .kv label{color:var(--dim);min-width:112px}
+  .log{height:180px;overflow:auto;background:#0d131b;border:1px solid var(--line);border-radius:10px;
+    padding:10px;font:12px/1.55 Consolas,"Cascadia Mono",monospace;color:#a9bcd4;white-space:pre-wrap}
+  .toast{position:fixed;right:18px;bottom:18px;background:#0f2f3a;border:1px solid var(--acc);color:var(--cyan);
+    padding:11px 15px;border-radius:10px;font-size:13px;opacity:0;transform:translateY(8px);transition:.25s;z-index:20}
+  .toast.show{opacity:1;transform:none}
+  .toast.err{background:#3a1416;border-color:var(--bad);color:#fecaca}
+  .bar{height:6px;border-radius:99px;background:#0d131b;overflow:hidden;margin-top:7px}
+  .bar i{display:block;height:100%;background:linear-gradient(90deg,#0891b2,var(--cyan));transition:width .5s}
+  .muted{color:var(--dim);font-size:12px}
+  .tag{display:inline-block;padding:1px 7px;border-radius:99px;border:1px solid var(--line);font-size:11px;color:var(--dim)}
+</style>
+</head>
+<body>
+<header>
+  <h1>🌀 拯救者 Y9000P 2022 风扇控制中心<small>EC 直控 · 绕过电源计划</small></h1>
+  <div class="pill"><i id="liveDot" class="dot"></i><span id="liveTxt">连接中…</span></div>
+</header>
+
+<main>
+  <div class="cards">
+    <div class="card"><div class="k">风扇转速</div><div class="v"><span id="rpm" class="rpm-ok">—</span><span class="u">RPM</span></div>
+      <div class="s">目标 <b id="tgt">—</b> · 满速上限 <span id="ceil">—</span></div>
+      <div class="bar"><i id="rpmBar" style="width:0"></i></div></div>
+    <div class="card"><div class="k">近 CPU 温度</div><div class="v"><span id="cpu">—</span><span class="u">°C</span></div>
+      <div class="s">控制基准 <span id="basis">—</span> °C</div></div>
+    <div class="card"><div class="k">GPU 温度</div><div class="v"><span id="gpu">—</span><span class="u">°C</span></div>
+      <div class="s">近 GPU <span id="ngpu">—</span> °C</div></div>
+    <div class="card"><div class="k">Fn+Q 档位</div><div class="v" style="font-size:19px" id="mode">—</div>
+      <div class="s">曲线档位 <b id="prof">—</b> · <span id="mood">—</span></div></div>
+    <div class="card"><div class="k">CPU 功耗墙</div><div class="v" style="font-size:19px"><span id="pl1">—</span><span class="u">W 短时</span></div>
+      <div class="s">PL2 <span id="pl2">—</span> W · 配置 <span id="plWant">—</span></div></div>
+    <div class="card"><div class="k">CPU 占用 / 内存</div><div class="v" style="font-size:19px"><span id="util">—</span><span class="u">%</span></div>
+      <div class="s">内存 <span id="ram">—</span> °C · 环境 <span id="env">—</span> °C</div></div>
+  </div>
+
+  <div class="row">
+    <button data-profile="quiet">🔇 安静</button>
+    <button data-profile="balanced">⚖️ 均衡</button>
+    <button data-profile="performance">🚀 野兽</button>
+    <button data-profile="max">🌪 满速</button>
+    <button data-profile="custom">🎛 自定义</button>
+    <span style="width:12px"></span>
+    <button id="bBoost" class="danger">⚡ 满速 20s</button>
+    <button id="bPause" class="ghost">⏸ 暂停接管</button>
+    <button id="bResume" class="ghost">▶ 继续</button>
+    <button id="bReset" class="danger">↺ 恢复正常</button>
+    <button id="bStart" class="ghost">▶ 启动守护进程</button>
+  </div>
+
+  <section>
+    <h2>实时曲线 <span>转速 / 温度（最近 3 分钟，1 秒采样）</span></h2>
+    <canvas id="chart" width="1100" height="210"></canvas>
+    <div class="muted" style="margin-top:6px">
+      <span class="tag" style="color:#67e8f9">— 转速 RPM</span>
+      <span class="tag" style="color:#f59e0b">— 近CPU °C</span>
+      <span class="tag" style="color:#22d3ee">— GPU °C</span>
+      <span class="tag" style="color:#a3e635">- - 目标 RPM</span>
+    </div>
+  </section>
+
+  <div class="grid2">
+    <section>
+      <h2>风扇曲线 <span id="curveFor">—</span></h2>
+      <div id="cfgWarn" style="display:none;color:#ff9b6b;font-size:12px;margin:2px 0 6px;line-height:1.5"></div>
+      <div class="muted" style="margin-bottom:8px">
+        CPU 轴 = 近 CPU 温度（+ 负载预判自动加成）；GPU 轴 = EC GPU 温度。转速范围
+        <b id="rpmRange">2400 – 6600</b> RPM。
+      </div>
+      <div style="overflow:auto">
+        <table id="curveTbl">
+          <thead><tr><th style="width:52px">序</th><th>温度 °C</th><th>转速 RPM</th><th>直观</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="row" style="margin:12px 0 0">
+        <button id="bSave">💾 保存并生效</button>
+        <button id="bRevert" class="ghost">✋ 放弃修改</button>
+        <button id="bCopyPerf" class="ghost">📋 从野兽档复制</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>安全与预判</h2>
+      <div class="kv"><label>转速下限</label><input type="number" id="sFloor" step="50" min="1500" max="6000"><span class="muted">RPM（防失速）</span></div>
+      <div class="kv"><label>转速上限</label><input type="number" id="sCeil" step="50" min="3000" max="6600"><span class="muted">RPM（实测满速 6600）</span></div>
+      <div class="kv"><label>近CPU 强制满速</label><input type="number" id="sCpuCrit" min="70" max="99"><span class="muted">°C</span></div>
+      <div class="kv"><label>GPU 强制满速</label><input type="number" id="sGpuCrit" min="60" max="99"><span class="muted">°C</span></div>
+      <div class="kv"><label>温度偏移</label><input type="number" id="sOffset" step="1" min="-20" max="30"><span class="muted">°C（把近NTC换算到核心温度）</span></div>
+      <div class="kv"><label>负载预判</label><input type="number" id="sBoost" step="0.5" min="0" max="10"><span class="muted">每 10% CPU 占用额外 +°C</span></div>
+      <div class="kv"><label>预判上限</label><input type="number" id="sBoostMax" step="1" min="0" max="30"><span class="muted">°C</span></div>
+      <div class="row" style="margin-top:10px">
+        <button id="bSaveSafety">💾 保存安全设置</button>
+      </div>
+      <div class="muted" style="margin-top:10px;line-height:1.7">
+        守护进程是唯一写 EC 的进程；任何写入都被夹在上/下限之间。<br>
+        过温后自动满速，降 8°C 自动解除；EC 读失败 3 次也会强制满速。<br>
+        <b>EC 会保持最后一次命令值</b>——彻底交还 BIOS 自动策略请重启电脑。
+      </div>
+    </section>
+  </div>
+
+  <section>
+    <h2>事件日志 <span>logs\fan.log 尾部</span></h2>
+    <div class="log" id="log">加载中…</div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const state = { cfg:null, curve:null, profile:'performance', series:[], live:null, paused:false };
+let toastTimer = null;
+
+function toast(msg, isErr){
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isErr ? ' err' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.className = 'toast', 2600);
+}
+async function api(path, opts){
+  const r = await fetch(path, opts);
+  const txt = await r.text();
+  let body = null;
+  try { body = txt ? JSON.parse(txt) : null; } catch(e){ body = txt; }
+  if(!r.ok) throw new Error((body && body.error) || ('HTTP ' + r.status));
+  return body;
+}
+function cmd(type, args){
+  return api('/api/cmd', { method:'POST', body: JSON.stringify({ type, args: args||{} }) });
+}
+function specOf(points){ return points.map(p => p.t + ':' + p.rpm).join(','); }
+function parseSpec(s){
+  return s.split(/[,，]/).filter(x => x.trim()).map(x => {
+    const kv = x.split(/[:：]/);
+    return { t: parseFloat(kv[0]), rpm: parseInt(kv[1], 10) };
+  });
+}
+
+/* ---------------- curves ---------------- */
+function loadCurveFor(name){
+  const p = state.cfg.profiles[name];
+  if(!p) return;
+  state.profile = name;
+  state.curve = { cpu: parseSpec(p.cpu), gpu: parseSpec(p.gpu) };
+  $('#curveFor').textContent = '当前编辑：' + name + '（' + p.label + '，上限 ' + p.ceiling + ' RPM）';
+  renderCurveTable();
+  document.querySelectorAll('[data-profile]').forEach(b => b.classList.toggle('active', b.dataset.profile === name));
+}
+function renderCurveTable(){
+  const tb = $('#curveTbl tbody');
+  tb.innerHTML = '';
+  const rows = [
+    { key:'cpu', title:'CPU' },
+    { key:'gpu', title:'GPU' }
+  ];
+  for(const grp of rows){
+    const head = document.createElement('tr');
+    head.innerHTML = '<td colspan="4" style="color:var(--cyan);padding-top:9px">' + grp.title + ' 曲线</td>';
+    tb.appendChild(head);
+    state.curve[grp.key].forEach((pt, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td class="muted">' + (i+1) + '</td>' +
+        '<td><input type="number" data-g="' + grp.key + '" data-i="' + i + '" data-f="t" value="' + pt.t + '" step="0.5"></td>' +
+        '<td><input type="number" data-g="' + grp.key + '" data-i="' + i + '" data-f="rpm" value="' + pt.rpm + '" step="50"></td>' +
+        '<td><input type="range" data-g="' + grp.key + '" data-i="' + i + '" data-f="rpm" min="2000" max="6600" step="50" value="' + pt.rpm + '"></td>';
+      tb.appendChild(tr);
+    });
+  }
+  tb.querySelectorAll('input').forEach(el => {
+    el.addEventListener('input', ev => {
+      const g = ev.target.dataset.g, i = +ev.target.dataset.i, f = ev.target.dataset.f;
+      const v = parseFloat(ev.target.value);
+      if(isNaN(v)) return;
+      state.curve[g][i][f] = v;
+      // mirror the paired rpm control
+      tb.querySelectorAll('input[data-g="' + g + '"][data-i="' + i + '"][data-f="rpm"]')
+        .forEach(o => { if(o !== ev.target) o.value = v; });
+    });
+  });
+}
+async function saveCurve(){
+  const c = state.curve;
+  for(const key of ['cpu','gpu']){
+    const pts = c[key].slice().sort((a,b) => a.t - b.t);
+    for(let i = 1; i < pts.length; i++){
+      if(pts[i].t <= pts[i-1].t) return toast('温度必须递增且不重复（第 ' + (i+1) + ' 点）', true);
+    }
+    for(const p of pts){
+      if(p.rpm < 1500 || p.rpm > 6600) return toast('转速需落在 1500–6600 RPM', true);
+    }
+    await cmd('curve', { profile: state.profile, which: key, spec: specOf(pts) });
+  }
+  toast('曲线已保存并下发给守护进程');
+  await refreshCfg();
+  loadCurveFor(state.profile);
+}
+
+/* ---------------- chart ---------------- */
+function drawChart(){
+  const cv = $('#chart'), ctx = cv.getContext('2d');
+  const w0 = cv.clientWidth, h0 = cv.clientHeight;
+  // a hidden/background tab reports 0x0: resizing to 0 would erase the chart and
+  // leave it broken until the next real layout, so keep the previous frame
+  if (w0 <= 0 || h0 <= 0) return;
+  const w = cv.width = w0 * devicePixelRatio;
+  const h = cv.height = h0 * devicePixelRatio;
+  ctx.clearRect(0, 0, w, h);
+  const s = state.series;
+  if(s.length < 2){
+    ctx.fillStyle = '#54687f'; ctx.font = (13 * devicePixelRatio) + 'px sans-serif';
+    ctx.fillText('等待守护进程上报数据…（未运行则点上方「启动守护进程」）', 18 * devicePixelRatio, h/2);
+    return;
+  }
+  const pad = 8 * devicePixelRatio;
+  const rMin = 1500, rMax = 7000, tMin = 30, tMax = 100;
+  const line = (get, min, max, color, dash) => {
+    ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 1.8 * devicePixelRatio;
+    ctx.setLineDash(dash || []);
+    s.forEach((p, i) => {
+      const v = get(p);
+      if(v == null || isNaN(v)) return;
+      const x = pad + (w - 2*pad) * (i / (s.length - 1));
+      const y = h - pad - (h - 2*pad) * ((v - min) / (max - min));
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    });
+    ctx.stroke(); ctx.setLineDash([]);
+  };
+  // grid
+  ctx.strokeStyle = '#18212d'; ctx.lineWidth = 1;
+  for(let g = 0; g <= 4; g++){
+    const y = pad + (h - 2*pad) * g/4;
+    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w - pad, y); ctx.stroke();
+  }
+  line(p => p.rpm, rMin, rMax, '#67e8f9');
+  line(p => p.tgt, rMin, rMax, '#a3e635', [5*devicePixelRatio, 4*devicePixelRatio]);
+  line(p => p.cpu, tMin, tMax, '#f59e0b');
+  line(p => p.gpu, tMin, tMax, '#22d3ee');
+}
+
+/* ---------------- refresh ---------------- */
+function fmt(v){ return (v == null || v < 0) ? '—' : v; }
+async function refreshLive(){
+  let d;
+  try { d = await api('/api/live'); }
+  catch(e){ $('#liveTxt').textContent = '面板服务断开'; $('#liveDot').className = 'dot'; return; }
+  const live = d.live || {};
+  const snap = live.snap || {};
+  const run = d.daemon && d.daemon.running;
+  $('#liveDot').className = 'dot' + (run ? ' on' : '');
+  $('#liveTxt').textContent = run ? ('守护运行中 pid ' + d.daemon.pid) : (d.direct_read ? '直接读取（守护未运行）' : '守护未运行');
+  $('#bStart').style.display = run ? 'none' : '';
+
+  $('#rpm').textContent = fmt(snap.rpm);
+  $('#tgt').textContent = live.last_target != null && live.last_target > 0 ? live.last_target : (live.desired ? live.desired.rpm : '—');
+  $('#ceil').textContent = state.cfg ? state.cfg.safety.rpm_ceiling : '6600';
+  const maxR = 6600;
+  $('#rpmBar').style.width = Math.min(100, (snap.rpm || 0) / maxR * 100) + '%';
+  $('#cpu').textContent = fmt(snap.near_cpu);
+  $('#cpu').className = snap.near_cpu >= (state.cfg ? state.cfg.safety.nearcpu_crit : 92) ? 'crit' : (snap.near_cpu >= 85 ? 'hot' : '');
+  $('#basis').textContent = live.desired ? live.desired.cpu_temp_basis : '—';
+  $('#gpu').textContent = fmt(snap.gpu_c);
+  $('#gpu').className = snap.gpu_c >= (state.cfg ? state.cfg.safety.gpu_crit : 87) ? 'crit' : (snap.gpu_c >= 80 ? 'hot' : '');
+  $('#ngpu').textContent = fmt(snap.near_gpu);
+  $('#mode').textContent = snap.mode_name || '—';
+  $('#prof').textContent = live.label || live.profile || '—';
+  $('#mood').textContent = live.mode || '—';
+  $('#pl1').textContent = fmt(snap.pl1);
+  $('#pl2').textContent = fmt(snap.pl2);
+  $('#plWant').textContent = state.cfg ? (state.cfg.power.pl1 + '/' + state.cfg.power.pl2) : '—';
+  $('#util').textContent = fmt(snap.cpu_util);
+  $('#ram').textContent = fmt(snap.ram_c);
+  $('#env').textContent = fmt(snap.env_c);
+  $('#bPause').classList.toggle('active', !!live.paused);
+  document.querySelectorAll('[data-profile]').forEach(b => b.classList.toggle('active', b.dataset.profile === live.profile));
+
+  if(Array.isArray(live.series) && live.series.length){
+    state.series = live.series.map(p => ({ t:p.t, rpm:p.rpm, tgt:p.target, cpu:p.cpu, gpu:p.gpu }));
+  } else if(snap.time){
+    const hh = (snap.time || '').slice(11);
+    const last = state.series[state.series.length - 1];
+    if(!last || last.t !== hh){
+      state.series.push({ t: hh, rpm: snap.rpm, tgt: live.last_target, cpu: snap.near_cpu, gpu: snap.gpu_c });
+      if(state.series.length > 180) state.series.shift();
+    }
+  }
+  drawChart();
+}
+async function refreshCfg(){
+  try {
+    const d = await api('/api/config');
+    state.cfg = d.config;
+    // server-side curve check (a curve flattened onto one RPM pins the fans regardless of temp)
+    const ws = Array.isArray(d.warnings) ? d.warnings.filter(x => x && x.length) : [];
+    const wEl = $('#cfgWarn');
+    if (ws.length) { wEl.style.display = ''; wEl.textContent = '⚠ 曲线体检：' + ws.join(' ／ '); }
+    else { wEl.style.display = 'none'; wEl.textContent = ''; }
+    $('#sFloor').value = d.config.safety.rpm_floor;
+    $('#sCeil').value = d.config.safety.rpm_ceiling;
+    $('#sCpuCrit').value = d.config.safety.nearcpu_crit;
+    $('#sGpuCrit').value = d.config.safety.gpu_crit;
+    $('#sOffset').value = d.config.telemetry.cpu_offset;
+    $('#sBoost').value = d.config.load_boost.per_10pct_util;
+    $('#sBoostMax').value = d.config.load_boost.max_add_c;
+    $('#rpmRange').textContent = d.config.safety.rpm_floor + ' – ' + d.config.safety.rpm_ceiling;
+  } catch(e){ /* keep old */ }
+}
+async function refreshLog(){
+  try {
+    const d = await api('/api/log');
+    const arr = Array.isArray(d) ? d : (d && Array.isArray(d.lines) ? d.lines : []);
+    const el = $('#log');
+    el.textContent = arr.slice(-45).join('\n');
+    el.scrollTop = el.scrollHeight;
+  } catch(e){}
+}
+
+/* ---------------- wiring ---------------- */
+document.querySelectorAll('[data-profile]').forEach(b => {
+  b.addEventListener('click', async () => {
+    const name = b.dataset.profile;
+    try { await cmd('profile', { profile: name }); toast('已切换到 ' + name + ' 档'); loadCurveFor(name); }
+    catch(e){ toast(e.message, true); }
+  });
+});
+$('#bBoost').addEventListener('click', async () => {
+  try { await cmd('boost', { sec: 20 }); toast('满速 20 秒，之后自动解除'); } catch(e){ toast(e.message, true); }
+});
+$('#bPause').addEventListener('click', async () => { try { await cmd('pause', {}); toast('已暂停接管，风扇保持当前转速'); } catch(e){ toast(e.message, true); } });
+$('#bResume').addEventListener('click', async () => { try { await cmd('resume', {}); toast('已恢复曲线控制'); } catch(e){ toast(e.message, true); } });
+$('#bReset').addEventListener('click', async () => {
+  if(!confirm('恢复正常值？\n会取消满速锁定、按当前档位重设 Fn+Q，并把转速写回安全默认值。')) return;
+  try { await cmd('reset', {}); toast('已恢复'); } catch(e){ toast(e.message, true); }
+});
+$('#bStart').addEventListener('click', () => toast('请在命令行执行： fanctl.ps1 daemon start（会弹管理员授权）'));
+$('#bSave').addEventListener('click', e => { e.target.disabled = true; saveCurve().catch(x => toast(x.message, true)).finally(() => e.target.disabled = false); });
+$('#bRevert').addEventListener('click', () => { loadCurveFor(state.profile); toast('已放弃未保存的修改'); });
+$('#bCopyPerf').addEventListener('click', () => {
+  const p = state.cfg.profiles.performance;
+  state.curve = { cpu: parseSpec(p.cpu), gpu: parseSpec(p.gpu) };
+  renderCurveTable(); toast('已载入野兽档曲线，点保存生效');
+});
+$('#bSaveSafety').addEventListener('click', async () => {
+  try {
+    await cmd('safety', {
+      rpm_floor: +$('#sFloor').value, rpm_ceiling: +$('#sCeil').value,
+      nearcpu_crit: +$('#sCpuCrit').value, gpu_crit: +$('#sGpuCrit').value,
+      exit_rpm: state.cfg.safety.exit_rpm, write_gap_ms: state.cfg.safety.write_gap_ms,
+      manual_timeout_s: state.cfg.safety.manual_timeout_s, reassert_gap_s: state.cfg.safety.reassert_gap_s
+    });
+    await cmd('boostcfg', { cpu_offset: +$('#sOffset').value, per_10pct_util: +$('#sBoost').value, max_add_c: +$('#sBoostMax').value });
+    toast('安全设置已保存'); await refreshCfg();
+  } catch(e){ toast(e.message, true); }
+});
+window.addEventListener('resize', drawChart);
+
+(async function init(){
+  await refreshCfg();
+  loadCurveFor(state.cfg.active_profile || 'performance');
+  await refreshLive();
+  refreshLog();
+  setInterval(refreshLive, 1000);
+  setInterval(refreshLog, 5000);
+})();
+</script>
+</body>
+</html>
