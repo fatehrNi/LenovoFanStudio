@@ -1,5 +1,11 @@
 ﻿# 拯救者 Y9000P 2022 · 风扇转速管理系统
 
+[![test](https://github.com/fatehrNi/LenoveFanStudio/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/fatehrNi/LenoveFanStudio/actions/workflows/test.yml)
+
+仓库：<https://github.com/fatehrNi/LenoveFanStudio>（公开）。上面的 CI 只跑**不碰硬件**的那部分
+（编码门禁 / 语法 / 离线逻辑单测 / 编译打包 / 产物无头自检）；EC 相关的端到端验证必须在真的拯救者上跑，
+见「完整验证.cmd」或 `tools\final_verify.ps1`。
+
 **Legion Fan Studio** —— 绕过 Windows 电源计划，直接在 **EC（嵌入式控制器）层**调节风扇转速，
 并可在 EC 层覆盖 CPU 功耗墙。零依赖：只需 Windows 自带的 PowerShell 与 .NET Framework，
 **不需要** Vantage / Legion Toolkit，也不需要第三方驱动或联网。

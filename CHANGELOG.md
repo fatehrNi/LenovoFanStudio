@@ -64,6 +64,12 @@
   现在统一纯 ASCII 内容 + CRLF + `>nul`，并且**不再** `chcp 65001`（PS 5.1 用 OEM 代码页输出中文，
   切到 65001 反而乱码）。`.gitignore` 也去掉了 BOM（BOM 会让第一条规则失效）。
 - **新增 `风扇托盘.cmd`**：双击即启动托盘程序，自己找根目录或最新 `dist\` 里的 exe，找不到就提示先跑 `build\build.ps1`。
+- **CI 可靠性**（`.github\workflows\test.yml` 重写）：runner 上失败只留一句 `exit code 1`、日志又要权限看，
+  所以每一步现在都用 `Stop` + try/catch 并把原因写成 `::error::` / `::notice::` 注解（公开 API 就能读到）；
+  正文一律 ASCII（GH 写的临时 .ps1 没有 BOM，PS 5.1 按 GBK 解码中文会吞掉紧随其后的 ASCII 字符）；
+  不再用 `Out-String` 捕获 `Write-Host` 的输出做断言（PS 5.1 里 `Write-Host` 走 information stream，`2>&1` 捕不到）；
+  每步显式 `exit 0`（GH 的包装会传播 `$LASTEXITCODE`，残留值会把成功的步骤判失败）；
+  `upload-artifact` 加 `if-no-files-found: error`；`build.ps1` 的自检失败不再被 try/catch 吞成 warning。
 
 ### 已知限制
 
