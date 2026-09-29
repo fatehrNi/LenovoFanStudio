@@ -1,7 +1,16 @@
-﻿name: test
+name: test
 
-# 只跑不碰硬件的部分：语法、离线逻辑单测、编译打包 + 产物自检。
-# EC 相关的端到端验证必须在一台真的拯救者上跑（tools/smoke.ps1 等），CI 里没有那个硬件。
+# 只跑不碰硬件的部分：编码门禁、语法、离线逻辑单测、编译打包 + 产物自检。
+# EC 相关的端到端验证必须在一台真的拯救者上跑（tools/smoke.ps1 / dist_verify.ps1），CI 里没有那个硬件。
+#
+# 两个刻意的写法约束：
+# 1) 步骤正文只用 ASCII。GitHub 把 run 内容写成临时 .ps1 再用 Windows PowerShell 5.1 执行，
+#    临时脚本没有 BOM 时中文按系统 ANSI 代码页（GBK）解码，多字节序列会吞掉紧随其后的 ASCII
+#    字符，制造出只在 runner 上出现的解析/内容错误。中文放在 step 名称里（YAML，不经 PowerShell
+#    解析）是安全的。
+# 2) 每步都用 ErrorActionPreference=Stop + try/catch，并把失败原因写成 ::error:: 注解。
+#    runner 日志没有权限看，annotations 是唯一能远程读到的东西；而 `& script.ps1` 抛出的
+#    终止错误不会设置 $LASTEXITCODE，只查 $LASTEXITCODE 会把失败当成成功。
 
 on:
   push:
@@ -15,76 +24,123 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 编码检查（PowerShell 5.1 在中文系统上按 GBK 读无 BOM 文件）
+      - name: 编码检查（源文件必须 UTF-8 with BOM）
         shell: powershell
         run: |
-          # Inline instead of calling tools\fix-encoding.ps1: the annotation below tells us
-          # exactly which file the runner is unhappy about (a bare nested exit code does not).
-          $ErrorActionPreference = 'Continue'
-          $exts = @('.ps1', '.psm1', '.psd1', '.cs')
-          $all = @(Get-ChildItem -LiteralPath . -Recurse -File -ErrorAction SilentlyContinue |
-                   Where-Object { $exts -contains $_.Extension })
-          $bad = @($all | Where-Object {
-              $b = [IO.File]::ReadAllBytes($_.FullName)
-              -not ($b.Length -ge 3 -and $b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF)
-            })
-          $base = (Get-Location).Path.Length + 1
-          Write-Host ("::notice::UTF-8 BOM check: {0} source file(s) scanned, {1} missing BOM" -f $all.Count, $bad.Count)
-          foreach ($f in $bad) { Write-Host ("::error file={0}::源文件缺少 UTF-8 BOM" -f $f.FullName.Substring($base)) }
-          if ($bad.Count) { exit 1 }
+          $ErrorActionPreference = 'Stop'
+          try {
+            $exts = @('.ps1', '.psm1', '.psd1', '.cs')
+            $all = @(Get-ChildItem -LiteralPath . -Recurse -File -ErrorAction SilentlyContinue |
+                     Where-Object { $exts -contains $_.Extension })
+            $bad = @($all | Where-Object {
+                $b = [IO.File]::ReadAllBytes($_.FullName)
+                -not ($b.Length -ge 3 -and $b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF)
+              })
+            $base = (Get-Location).Path.Length + 1
+            Write-Host ("::notice::BOM check: {0} file(s) scanned, {1} missing BOM" -f $all.Count, $bad.Count)
+            foreach ($f in $bad) { Write-Host ("::error file={0}::missing UTF-8 BOM" -f $f.FullName.Substring($base)) }
+            if ($bad.Count) { exit 1 }
+            exit 0
+          } catch {
+            Write-Host ("::error::BOM check crashed: {0}" -f $_.Exception.Message)
+            exit 1
+          }
 
       - name: 语法检查
         shell: powershell
         run: |
-          $files = @('src/LenovoFan.psm1','src/fanctl.ps1','src/daemon.ps1','src/panel.ps1','src/menu.ps1','install.ps1','uninstall.ps1','build/build.ps1') +
-                   (Get-ChildItem tools\*.ps1 | ForEach-Object { $_.FullName -replace [regex]::Escape((Get-Location).Path + '\'), '' })
-          $out = & tools\syntax.ps1 -Files $files
-          $out | ForEach-Object { Write-Host $_ }
-          if (($out | Select-String '^FAIL').Count -gt 0) { throw '语法检查未通过' }
+          $ErrorActionPreference = 'Stop'
+          try {
+            $files = @('src/LenovoFan.psm1','src/fanctl.ps1','src/daemon.ps1','src/panel.ps1','src/menu.ps1','install.ps1','uninstall.ps1','build/build.ps1','tools/ci-syntax.ps1') +
+                     (Get-ChildItem tools\*.ps1 -Exclude 'ci-syntax.ps1' | ForEach-Object { $_.FullName.Substring((Get-Location).Path.Length + 1) -replace '\\', '/' })
+            $out = & tools\syntax.ps1 -Files $files | Out-String
+            Write-Host $out
+            $bad = @(($out -split "`r?`n") | Where-Object { $_ -match '^FAIL' })
+            foreach ($b in $bad) { Write-Host ("::error::{0}" -f $b) }
+            if ($bad.Count) { exit 1 }
+            Write-Host ("::notice::syntax OK for {0} file(s)" -f $files.Count)
+            exit 0
+          } catch {
+            Write-Host ("::error::syntax step crashed: {0}" -f $_.Exception.Message)
+            exit 1
+          }
 
       - name: 离线逻辑单测
         shell: powershell
         run: |
-          powershell -NoProfile -ExecutionPolicy Bypass -File tools\unit-tests.ps1
-          if ($LASTEXITCODE -ne 0) { throw 'unit tests failed' }
+          $ErrorActionPreference = 'Stop'
+          $out = ''
+          try {
+            $out = & tools\unit-tests.ps1 2>&1 | Out-String
+            Write-Host $out
+            if ($LASTEXITCODE -ne 0) { throw "unit-tests exited $LASTEXITCODE" }
+            $bad = @(($out -split "`r?`n") | Where-Object { $_ -match '  FAIL  ' })
+            if ($bad.Count) { throw ("{0} assertion(s) failed: {1}" -f $bad.Count, (($bad -join ' | ') -replace '\s+', ' ')) }
+            if ($out -notmatch 'UNIT_RESULT failures=0') { throw 'unit tests did not report success' }
+            Write-Host '::notice::unit tests OK'
+            exit 0
+          } catch {
+            Write-Host ("::error::{0}" -f $_.Exception.Message)
+            exit 1
+          }
 
       - name: 编译并打包
         shell: powershell
         run: |
-          $ErrorActionPreference = 'Continue'
-          $out = & powershell -NoProfile -ExecutionPolicy Bypass -File build\build.ps1 2>&1 | Out-String
-          $code = $LASTEXITCODE
-          ($out -split "`r?`n" | Where-Object { $_.Trim() }) | ForEach-Object { Write-Host $_ }
-          if ($code -ne 0) {
-            $bad = (@($out -split "`r?`n" | Where-Object { $_ -match 'FAIL|selftest|错误|Exception' }) -join ' ~ ')
-            if ($bad.Length -gt 900) { $bad = $bad.Substring(0, 900) }
-            Write-Host ("::error::build.ps1 退出码 {0}：{1}" -f $code, $bad)
+          $ErrorActionPreference = 'Stop'
+          $out = ''
+          try {
+            # no text scanning for problems here: build.ps1 prints "SELFTEST ALL PASS" on success,
+            # and a loose regex would turn a green build into a red one. build.ps1 throws on real
+            # failures, which this try/catch catches; the assertions below prove it actually built.
+            $out = & build\build.ps1 2>&1 | Out-String
+            Write-Host $out
+            $found = @(Get-ChildItem dist -Recurse -Filter LegionFanStudio.exe -ErrorAction SilentlyContinue)
+            if ($found.Count -eq 0) { throw 'build finished but dist contains no LegionFanStudio.exe' }
+            $zip = @(Get-ChildItem dist -Filter *.zip -ErrorAction SilentlyContinue)
+            if ($zip.Count -eq 0) { throw 'build finished but dist contains no zip' }
+            if ($out -notmatch 'SELFTEST ALL PASS') { throw 'build selftest did not report success' }
+            Write-Host ("::notice::build OK: {0} + {1}" -f $found[0].Name, $zip[0].Name)
+            exit 0
+          } catch {
+            Write-Host ("::error::{0}" -f $_.Exception.Message)
+            if ($out) { (($out -split "`r?`n" | Where-Object { $_.Trim() }) | Select-Object -Last 15) | ForEach-Object { Write-Host "::error::$_" } }
             exit 1
           }
 
       - name: 产物自检（不接触硬件）
         shell: powershell
         run: |
-          $ErrorActionPreference = 'Continue'
-          $exe = Get-ChildItem dist -Recurse -Filter LegionFanStudio.exe | Select-Object -First 1
-          if (-not $exe) { Write-Host '::error::dist 里找不到 LegionFanStudio.exe'; exit 1 }
-          $v = & $exe.FullName --version 2>&1 | Out-String
-          Write-Host ("::notice::--version exit={0} :: {1}" -f $LASTEXITCODE, $v.Trim())
-          $t = & $exe.FullName --selftest 2>&1 | Out-String
-          $te = $LASTEXITCODE
-          ($t -split "`r?`n" | Where-Object { $_.Trim() }) | ForEach-Object { Write-Host "  $_" }
-          if ($te -ne 0) {
-            Write-Host ("::error::selftest 退出码 {0}，失败行：{1}" -f $te, (($t -split "`r?`n" | Where-Object { $_ -match 'FAIL' }) -join ' | '))
+          $ErrorActionPreference = 'Stop'
+          Write-Host '::notice::artifact selftest step started'
+          try {
+            $exe = @(Get-ChildItem dist -Recurse -Filter LegionFanStudio.exe | Select-Object -First 1)
+            if ($exe.Count -eq 0) { throw 'LegionFanStudio.exe not found under dist' }
+            $path = $exe[0].FullName
+            $v = & "$path" --version 2>&1 | Out-String
+            Write-Host ("::notice::--version exit={0} :: {1}" -f $LASTEXITCODE, $v.Trim())
+            if ($LASTEXITCODE -ne 0) { throw ("--version exited {0}" -f $LASTEXITCODE) }
+            $t = & "$path" --selftest 2>&1 | Out-String
+            $tc = $LASTEXITCODE
+            Write-Host $t
+            $bad = @(($t -split "`r?`n") | Where-Object { $_ -match '  FAIL  ' })
+            if ($tc -ne 0 -or $bad.Count) {
+              throw ("selftest exit={0} failed_checks={1} :: {2}" -f $tc, $bad.Count, (($bad -join ' | ') -replace '\s+', ' '))
+            }
+            # with no daemon running, --status must exit 2 (and not crash)
+            $s = & "$path" --status 2>&1 | Out-String
+            $sc = $LASTEXITCODE
+            Write-Host ("::notice::--status exit={0} :: {1}" -f $sc, $s.Trim())
+            if ($sc -ne 2) { throw ("expected --status exit 2 with no daemon, got {0}" -f $sc) }
+            Write-Host '::notice::artifact selftest OK'
+            exit 0
+          } catch {
+            Write-Host ("::error::{0}" -f $_.Exception.Message)
             exit 1
           }
-          # 没有守护进程时 --status 应返回 2，而不是崩溃
-          $s = & $exe.FullName --status 2>&1 | Out-String
-          $se = $LASTEXITCODE
-          Write-Host ("--status exit={0} :: {1}" -f $se, $s.Trim())
-          if ($se -ne 2) { Write-Host ("::error::期望 --status 在没有守护进程时返回 2，实际 {0}（输出：{1}）" -f $se, $s.Trim()); exit 1 }
-          Write-Host '::notice::产物自检通过（selftest 0 / --status 2）'
 
       - uses: actions/upload-artifact@v4
         with:
           name: LegionFanStudio
           path: dist/*.zip
+          if-no-files-found: error
