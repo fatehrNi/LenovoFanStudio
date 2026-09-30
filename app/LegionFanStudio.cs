@@ -537,6 +537,43 @@ namespace LegionFanStudio
     }
 
     // ------------------------------------------------------------- tray app
+    // NotifyIcon.Text is limited to 63 characters in .NET Framework. A longer string throws
+    // ArgumentOutOfRangeException ("文本长度必须少于 64 个字符") on the timer thread; unhandled,
+    // it killed the whole tray app the moment a hold started.
+    internal static class Tray
+    {
+        public const int MaxTipChars = 63;
+
+        public static string Clamp(string s, int max)
+        {
+            if (string.IsNullOrEmpty(s)) return string.Empty;
+            if (s.Length <= max) return s;
+            if (max <= 1) return s.Substring(0, max);
+            return s.Substring(0, max - 1) + "…";
+        }
+
+        public static string BuildTip(Dictionary<string, object> live, bool daemonRunning)
+        {
+            if (live == null)
+            {
+                string idle = daemonRunning ? "Legion Fan Studio · 守护进程启动中…" : "Legion Fan Studio · 未接管风扇";
+                return Clamp(idle, MaxTipChars);
+            }
+            Dictionary<string, object> snap = Json.Dict(live["snap"]);
+            string body = Json.Int(snap, 0, "rpm") + " RPM · CPU " + Json.Int(snap, 0, "near_cpu")
+                        + "° GPU " + Json.Int(snap, 0, "gpu_c") + "° · " + Json.Str(live, "label");
+            string engine = Json.Str(live, "mode");
+            if (engine == "crit") return Clamp("🔥过温满速 " + body, MaxTipChars);
+            int holdLeft = Json.Int(live, 0, "hold_remaining");
+            if (engine == "hold" || Json.Int(live, 0, "paused") == 1 || holdLeft > 0)
+            {
+                string left = holdLeft > 0 ? " 剩" + holdLeft.ToString(CultureInfo.InvariantCulture) + "s" : "";
+                return Clamp("⏸保持 " + body + left, MaxTipChars);
+            }
+            return Clamp(body, MaxTipChars);
+        }
+    }
+
     internal class App : ApplicationContext
     {
         private readonly Paths _p;
@@ -562,10 +599,31 @@ namespace LegionFanStudio
             BuildMenu();
             _tray.ContextMenuStrip = _menu;
             _timer.Interval = 1200;
-            _timer.Tick += delegate { Refresh(); };
+            // Anything thrown here is an unhandled exception on the UI thread and takes the tray
+            // down with it. Refresh must never be fatal: log once and keep ticking.
+            _timer.Tick += delegate
+            {
+                try { Refresh(); } catch (Exception ex) { LogOnce("refresh 失败: " + ex.Message); }
+            };
             _timer.Start();
-            Refresh();
+            try { Refresh(); } catch (Exception ex) { LogOnce("首次刷新失败: " + ex.Message); }
             Balloon();
+        }
+
+        private string _lastLogged = "";
+
+        private void LogOnce(string msg)
+        {
+            if (msg == _lastLogged) return;          // do not repeat the same failure every tick
+            _lastLogged = msg;
+            try
+            {
+                if (!Directory.Exists(_p.LogDir)) Directory.CreateDirectory(_p.LogDir);
+                File.AppendAllText(Path.Combine(_p.LogDir, "tray.log"),
+                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " [WARN ] " + msg + Environment.NewLine,
+                    new UTF8Encoding(false));
+            }
+            catch { }
         }
 
         private static Icon LoadIcon(Paths p)
@@ -727,23 +785,7 @@ namespace LegionFanStudio
         private void Refresh()
         {
             _live = Json.ReadFile(_p.LiveJson);
-            string tip;
-            if (_live == null)
-            {
-                tip = _e.DaemonRunning ? "Legion Fan Studio · 守护进程启动中…" : "Legion Fan Studio · 未接管风扇";
-            }
-            else
-            {
-                Dictionary<string, object> snap = Json.Dict(_live["snap"]);
-                string engine = Json.Str(_live, "mode");
-                int holdLeft = Json.Int(_live, 0, "hold_remaining");
-                tip = "转速 " + Json.Int(snap, 0, "rpm") + " RPM · 近CPU " + Json.Int(snap, 0, "near_cpu")
-                    + "°C · GPU " + Json.Int(snap, 0, "gpu_c") + "°C · " + Json.Str(snap, "mode_name");
-                if (engine == "crit") tip = "🔥过温满速 " + tip;
-                else if (engine == "hold" || Json.Int(_live, 0, "paused") == 1 || (engine == "auto" && holdLeft > 0 && Json.Str(_live, "mode") == "hold"))
-                    tip = "⏸保持转速中(剩" + holdLeft.ToString(CultureInfo.InvariantCulture) + "s) " + tip;
-                if (tip.Length > 120) tip = tip.Substring(0, 117) + "…";
-            }
+            string tip = Tray.BuildTip(_live, _e.DaemonRunning);
             if (_tray.Text != tip) _tray.Text = tip;
 
             ToolStripItem header = _menu.Items["header"];
@@ -852,6 +894,19 @@ namespace LegionFanStudio
             }
             try
             {
+                // A tray app has no window to close; an unhandled UI exception would silently
+                // remove the icon and leave the user thinking the app vanished. Catch, report
+                // once, keep running.
+                Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+                Application.ThreadException += delegate(object sender, System.Threading.ThreadExceptionEventArgs te)
+                {
+                    try
+                    {
+                        MessageBox.Show("界面线程出现异常（已忽略，程序继续运行）：\n" + te.Exception.Message,
+                            "Legion Fan Studio", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
+                    catch { }
+                };
                 Application.Run(new App());
             }
             finally
@@ -996,6 +1051,15 @@ namespace LegionFanStudio
                 Chk("profile name", Json.Str(live, "profile").Length > 0, Json.Str(live, "profile"));
                 Chk("series array", Json.Arr(live, "series") != null, "n=" + Json.Arr(live, "series").Count);
                 Chk("nested desired read", Json.Get(live, "desired", "rpm") != null, "desired=" + Json.Int(live, -1, "desired", "rpm"));
+                // the tray tooltip must survive NotifyIcon's 63-char limit in every engine state
+                string tip = Tray.BuildTip(live, true);
+                Chk("tooltip fits NotifyIcon (<= 63)", tip.Length <= Tray.MaxTipChars, "len=" + tip.Length + " :: " + tip);
+                Dictionary<string, object> holdState = new Dictionary<string, object>(live);
+                holdState["mode"] = "hold";
+                holdState["hold_remaining"] = 900;
+                holdState["paused"] = 1;
+                string tipHold = Tray.BuildTip(holdState, true);
+                Chk("tooltip fits while holding", tipHold.Length <= Tray.MaxTipChars, "len=" + tipHold.Length + " :: " + tipHold);
             }
 
             Engine e = new Engine(p);

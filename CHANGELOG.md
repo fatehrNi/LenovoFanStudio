@@ -64,6 +64,13 @@
   现在统一纯 ASCII 内容 + CRLF + `>nul`，并且**不再** `chcp 65001`（PS 5.1 用 OEM 代码页输出中文，
   切到 65001 反而乱码）。`.gitignore` 也去掉了 BOM（BOM 会让第一条规则失效）。
 - **新增 `风扇托盘.cmd`**：双击即启动托盘程序，自己找根目录或最新 `dist\` 里的 exe，找不到就提示先跑 `build\build.ps1`。
+- **修掉托盘程序崩溃**：`NotifyIcon.Text` 在 .NET Framework 里上限 63 个字符，而"暂停接管"时的
+  提示串（`⏸保持转速中(剩900s) 转速 6600 RPM · 近CPU 62°C · GPU 56°C · 野兽 Performance`，76 字符）
+  超限，`set_Text` 抛 `ArgumentOutOfRangeException`；它在计时器回调里没人接，于是**整个托盘进程直接消失**。
+  现在：tooltip 由 `Tray.BuildTip()` 统一生成并硬夹到 63 字符以内（紧凑格式 `⏸保持 6600 RPM · CPU 63° GPU 56° · 野兽 剩900s`，
+  实测 41 字符），计时器回调包 try/catch 并写 `logs\tray.log`（同一条只记一次），
+  `Main` 里加 `Application.ThreadException` / `SetUnhandledExceptionMode(CatchException)`，
+  无头自检新增两条断言：常规与保持状态下的 tooltip 都必须 ≤63 字符（有守护进程数据时才跑）。
 - **CI 可靠性**（`.github\workflows\test.yml` 重写）：runner 上失败只留一句 `exit code 1`、日志又要权限看，
   所以每一步现在都用 `Stop` + try/catch 并把原因写成 `::error::` / `::notice::` 注解（公开 API 就能读到）；
   正文一律 ASCII（GH 写的临时 .ps1 没有 BOM，PS 5.1 按 GBK 解码中文会吞掉紧随其后的 ASCII 字符）；
