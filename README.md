@@ -1,8 +1,8 @@
 ﻿# 拯救者 Y9000P 2022 · 风扇转速管理系统
 
-[![test](https://github.com/fatehrNi/LenoveFanStudio/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/fatehrNi/LenoveFanStudio/actions/workflows/test.yml)
+[![test](https://github.com/fatehrNi/LenovoFanStudio/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/fatehrNi/LenovoFanStudio/actions/workflows/test.yml)
 
-仓库：<https://github.com/fatehrNi/LenoveFanStudio>（公开）。上面的 CI 只跑**不碰硬件**的那部分
+仓库：<https://github.com/fatehrNi/LenovoFanStudio>（公开）。上面的 CI 只跑**不碰硬件**的那部分
 （编码门禁 / 语法 / 离线逻辑单测 / 编译打包 / 产物无头自检）；EC 相关的端到端验证必须在真的拯救者上跑，
 见「完整验证.cmd」或 `tools\final_verify.ps1`。
 
